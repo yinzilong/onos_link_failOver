@@ -40,6 +40,10 @@ import static org.onosproject.incubator.net.PortStatisticsService.MetricType.PAC
 import static org.onosproject.net.DefaultEdgeLink.createEdgeLink;
 import static org.onosproject.ui.impl.TrafficMonitorBase.Mode.IDLE;
 
+import org.onosproject.ui.impl.topo.util.TrafficLink.StatsType;
+import org.onosproject.net.ConnectPoint;
+import org.onosproject.ui.topo.LinkHighlight;
+
 /**
  * Base superclass for traffic monitor (both 'classic' and 'topo2' versions).
  */
@@ -283,6 +287,46 @@ public abstract class TrafficMonitorBase extends AbstractTopoMonitor {
             // we only want to report on links deemed to have traffic
             if (tlink.hasTraffic()) {
                 linksWithTraffic.add(tlink);
+                // we only want to report on links deemed to have traffic
+                if (tlink.hasTraffic()) {
+                    linksWithTraffic.add(tlink);
+                    //这里先注释掉，可能是贴错了位置
+                    if(type == StatsType.PORT_STATS){
+                        ConnectPoint src = tlink.key().src();
+                        ConnectPoint dst = tlink.key().dst();
+
+                        LinkHighlight linkHighlight = tlink.highlight(type);
+                        String bandwidth = linkHighlight.label();
+
+                        double level = 10000;   //假设带宽为10兆
+                        String tlinkId = tlink.linkId();
+                        if(bandwidth.contains("M")){
+                            double temp = Double.valueOf(bandwidth.trim().substring(0, bandwidth.indexOf("M"))) * 1000;
+                            log.info("=====bandwidth: " + temp + ", 帶寬利用率： " + temp/level);
+
+                        }else if(bandwidth.contains("K")){
+                            double level1 = 100000;
+                            String tempETL = bandwidth.trim().substring(0, bandwidth.indexOf("K"));
+                            //处理 “1,006.67”这种脏数据
+                            String tempString = "";
+                            if(tempETL.contains(",")){
+                                String[] tempStringArray = tempETL.split(",");
+                                tempString = tempStringArray[0] + tempStringArray[1];
+                            }
+                            //log.info("curTemp: " + tempString);
+                            double temp = 0;
+                            if(tempString != null &&  tempString != "" && !tempString.equals("")){
+                                temp = Double.valueOf(tempString);
+                            }
+                            log.info("=====bandwidth(M: " + temp  + ", 帶寬利用率： " + temp/level1);
+                        }
+
+                    }else{
+
+                    }
+                }else
+                {
+                }
             }
         }
         return linksWithTraffic;

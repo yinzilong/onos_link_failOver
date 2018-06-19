@@ -849,6 +849,8 @@ public class OpenFlowDeviceProvider extends AbstractProvider implements DevicePr
         public void portChanged(Dpid dpid, OFPortStatus status) {
             LOG.debug("portChanged({},{})", dpid, status);
             PortDescription portDescription = buildPortDescription(status);
+
+            LOG.info("======故障发生的开始时间："+System.currentTimeMillis());
             if (status.getReason() != OFPortReason.DELETE) {
                 providerService.portStatusChanged(deviceId(uri(dpid)), portDescription);
             } else {

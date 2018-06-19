@@ -20,8 +20,11 @@ import org.onosproject.core.GroupId;
 import org.onosproject.net.ConnectPoint;
 import org.onosproject.net.Link;
 import org.onosproject.net.Path;
+import org.onosproject.net.flow.FlowEntry;
+import org.onosproject.net.flow.FlowId;
 import org.onosproject.net.flow.FlowRule;
 
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -82,4 +85,13 @@ public interface StatisticService {
      * @return {@link Load Load}
      */
     Load load(Link link, ApplicationId appId, Optional<GroupId> groupId);
+
+    //仅仅是为了重载，修改一行代码
+    Link max(Path path, String string);
+
+    //获取与某ConnectPoint有关的流表项的流速
+    Map<FlowId, Double> getFlowIdRateMap(ConnectPoint connectPoint);
+
+    //从源头获取流速(hrh)
+    Map<FlowId, Double> getFLowRate(ConnectPoint cp);
 }

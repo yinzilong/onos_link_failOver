@@ -31,21 +31,21 @@ import org.onosproject.net.ConnectPoint;
 import org.onosproject.net.Link;
 import org.onosproject.net.Path;
 
-import org.onosproject.net.flow.FlowEntry;
-import org.onosproject.net.flow.FlowRule;
-import org.onosproject.net.flow.FlowRuleEvent;
-import org.onosproject.net.flow.FlowRuleListener;
-import org.onosproject.net.flow.FlowRuleService;
+import org.onosproject.net.flow.*;
+import org.onosproject.net.flow.criteria.Criterion;
+import org.onosproject.net.flow.criteria.PortCriterion;
+import org.onosproject.net.flow.instructions.Instruction;
+import org.onosproject.net.flow.instructions.Instructions;
 import org.onosproject.net.statistic.DefaultLoad;
 import org.onosproject.net.statistic.Load;
 import org.onosproject.net.statistic.StatisticService;
 import org.onosproject.net.statistic.StatisticStore;
 import org.slf4j.Logger;
 
-import java.util.Collections;
-import java.util.Objects;
-import java.util.Optional;
-import java.util.Set;
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.locks.ReadWriteLock;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 import static org.slf4j.LoggerFactory.getLogger;
@@ -68,8 +68,12 @@ public class StatisticManager implements StatisticService {
     @Reference(cardinality = ReferenceCardinality.MANDATORY_UNARY)
     protected StatisticStore statisticStore;
 
+    private static ConcurrentHashMap<FlowId, Double> flowIdRateMap=new ConcurrentHashMap<>();
 
     private final InternalFlowRuleListener listener = new InternalFlowRuleListener();
+
+    private Map<FlowEntry,Long> flows_bytes = new ConcurrentHashMap<>();
+    private Map<FlowEntry,Double> flows_rate = new ConcurrentHashMap<>();
 
     @Activate
     public void activate() {
@@ -138,6 +142,26 @@ public class StatisticManager implements StatisticService {
         return maxLink;
     }
 
+    //重载仅仅为了修改一行代码
+    @Override
+    public Link max(Path path, String string) {
+        checkPermission(STATISTIC_READ);
+
+        if (path.links().isEmpty()) {
+            return null;
+        }
+        Load maxLoad = new DefaultLoad();
+        Link maxLink = path.links().get(0);  //此处修改
+        for (Link link : path.links()) {
+            Load load = loadInternal(link.src());
+            if (load.rate() > maxLoad.rate()) {
+                maxLoad = load;
+                maxLink = link;
+            }
+        }
+        return maxLink;
+    }
+
     @Override
     public Link min(Path path) {
         checkPermission(STATISTIC_READ);
@@ -184,6 +208,24 @@ public class StatisticManager implements StatisticService {
         return new DefaultLoad(aggregate(stats.current), aggregate(stats.previous));
     }
 
+
+    //zlzl=====
+    //在读写map的过程中加入读写锁
+    private static ReadWriteLock rwl = new ReentrantReadWriteLock();
+    public void setFlowIdRateMap(FlowId flowId, Double rate)
+    {
+        rwl.writeLock().lock();
+        try
+        {
+            flowIdRateMap.put(flowId, rate);
+        }catch(Exception e)
+        {
+            e.printStackTrace();
+        }finally {
+            rwl.writeLock().unlock();
+        }
+    }
+
     /**
      * Returns statistics of the specified port.
      *
@@ -198,7 +240,199 @@ public class StatisticManager implements StatisticService {
             previous = getPreviousStatistic(connectPoint);
         }
 
+//        log.info("======connectPoint: " + connectPoint + "======current: " + current + " ======previous" + previous);
+
+//        if(connectPoint.toString().equals("of:0000000000100000/1") || connectPoint.toString().equals("of:0000000000100000/2"))
+//        {
+//            log.info("======connectPoint: " + connectPoint + "======current: " + current + " ======previous" + previous);
+//        }
+
+//        for(FlowEntry flowEntry : current){
+//            if(previous.contains(flowEntry)){
+//                long curBytes = flowEntry.bytes();
+//                for(FlowEntry flowEntry1 : previous){
+//                    if(flowEntry1.id().toString().trim().equals(flowEntry.id().toString().trim())){
+//                        long preBytes = flowEntry1.bytes();
+//                        //log.info("statistic ----------------------------------------");
+//                        //log.info("flowId: " + flowEntry.id().toString().trim());
+//                        Double rate = (curBytes - preBytes)*1.0 / 5;
+//                        //log.info("flowRate: " + rate);
+//                        setFlowIdRateMap(flowEntry.id(), rate);
+////                        writeFile("/root/onos/statsOfLinks.txt", connectPoint.toString(), flowEntry.id().toString(), rate);
+//                    }
+//                }
+//            }
+//        }
+//
+//        List<String> currentFlowIds = new ArrayList<>();
+//        List<String> previousFlowIds = new ArrayList<>();
+//        List<String> flowEntrysFlowIds = new ArrayList<>();
+//        for(FlowEntry flowEntry : current){
+//            currentFlowIds.add(flowEntry.id().toString());
+//        }
+//        for(FlowEntry flowEntry : previous){
+//            previousFlowIds.add(flowEntry.id().toString());
+//        }
+//
+//        //Iterable<FlowEntry> activeEntries = flowRuleService.getFlowEntries(srcDeviceId);
+//        for(FlowEntry flowEntry : flowRuleService.getFlowEntries(connectPoint.deviceId())){
+//            for (Instruction instruction : flowEntry.treatment().immediate()) {
+//                if (instruction.type() == Instruction.Type.OUTPUT ) {
+//                    Instructions.OutputInstruction out = (Instructions.OutputInstruction) instruction;
+//                    //如果输出端口＝故障端口
+//                    if (out.port().toLong() == connectPoint.port().toLong()) {
+//
+//                        //这里将与故障端口有关的流表项存储，便于后续计算分流策略
+//                        flowEntrysFlowIds.add(flowEntry.id().toString());
+//                    }
+//                }
+//            }
+//
+//        }
+//
+//        log.info("======connectionPoint:"+connectPoint.toString());
+//        log.info("======currentFlowIds:"+currentFlowIds.toString());
+//        log.info("======previousFlowIds:"+previousFlowIds.toString());
+//        log.info("======flowEntryFlowIds:"+flowEntrysFlowIds.toString());
+
         return new Statistics(current, previous);
+    }
+
+    public void setFlowRateKV(ConcurrentHashMap<FlowId, Double> flowRate, FlowId key, Double value){
+        rwl.writeLock().lock();
+        try{
+            flowRate.put(key, value);
+        }catch (Exception e){
+            e.printStackTrace();
+        }finally {
+            rwl.writeLock().unlock();
+        }
+    }
+    //zlzl======hrh
+//    public Map<FlowEntry,String> getFLowRate(ConnectPoint cp){
+//        ConcurrentHashMap<FlowEntry,String> flowRate = new ConcurrentHashMap<>();
+//        synchronized (flows_rate){
+//            //log.info("====flows_rate:"+flows_rate);
+//            for(FlowEntry flowEntry:flows_rate.keySet()) {
+//                if (flowEntry.deviceId().toString().equals(cp.deviceId().toString())) {
+//                    Instructions.OutputInstruction out = null;
+//                    PortCriterion in = null;
+//                    for (Instruction instruction : flowEntry.treatment().immediate()) {
+//                        if (instruction.type() == Instruction.Type.OUTPUT) {
+//                            out = (Instructions.OutputInstruction) instruction;
+//                        }
+//                    }
+//                    for (Criterion criterion : flowEntry.selector().criteria()) {
+//                        if (criterion.type() == Criterion.Type.IN_PORT) {
+//                            in = (PortCriterion) flowEntry.selector().getCriterion(Criterion.Type.IN_PORT);
+//                        }
+//                    }
+//                    //log.info("++++++++deviceId:"+flowEntry.deviceId()+",out:"+out.port().toString()+",in:"+in.port().toString());
+//                    if ((out.port().toLong() == cp.port().toLong()) || (in.port().toLong() == cp.port().toLong())) {
+//                        String flowRateString = String.valueOf(flows_rate.get(flowEntry));
+//                        flowRate.put(flowEntry, flowRateString);
+//                        setFlowRateKV(flowRate, flowEntry, flowRateString);
+//                    }
+//                }
+//            }
+//        }
+//
+////        log.info("====connectPoint:"+cp.toString());
+////        for(FlowEntry f:flowRate.keySet()){
+////            log.info(""+f+" = "+flowRate.get(f));
+////        }
+//
+//        return flowRate;
+//    }
+
+    public Map<FlowId, Double> getFLowRate(ConnectPoint cp){
+        ConcurrentHashMap<FlowId, Double> flowRate = new ConcurrentHashMap<>();
+        synchronized (flows_rate){
+            //log.info("====flows_rate:"+flows_rate);
+            for(FlowEntry flowEntry:flows_rate.keySet()) {
+                if (flowEntry.deviceId().toString().equals(cp.deviceId().toString())) {
+                    Instructions.OutputInstruction out = null;
+                    PortCriterion in = null;
+                    for (Instruction instruction : flowEntry.treatment().immediate()) {
+                        if (instruction.type() == Instruction.Type.OUTPUT) {
+                            out = (Instructions.OutputInstruction) instruction;
+                        }
+                    }
+                    for (Criterion criterion : flowEntry.selector().criteria()) {
+                        if (criterion.type() == Criterion.Type.IN_PORT) {
+                            in = (PortCriterion) flowEntry.selector().getCriterion(Criterion.Type.IN_PORT);
+                        }
+                    }
+                    //log.info("++++++++deviceId:"+flowEntry.deviceId()+",out:"+out.port().toString()+",in:"+in.port().toString());
+                    if ((out.port().toLong() == cp.port().toLong()) || (in.port().toLong() == cp.port().toLong())) {
+//                        String flowRateString = String.valueOf(flows_rate.get(flowEntry));
+                        //flowRate.put(flowEntry.id(), flows_rate.get(flowEntry));
+                        setFlowRateKV(flowRate, flowEntry.id(), flows_rate.get(flowEntry));
+                    }
+                }
+            }
+        }
+
+//        log.info("====connectPoint:"+cp.toString());
+//        for(FlowEntry f:flowRate.keySet()){
+//            log.info(""+f+" = "+flowRate.get(f));
+//        }
+
+        return flowRate;
+    }
+
+
+    public synchronized void caculateFLowRate(FlowRule rule){
+        if(rule instanceof FlowEntry){
+            for(Criterion c: rule.selector().criteria()){
+                if(c.type()==Criterion.Type.IN_PORT){
+                    if(flows_bytes.containsKey(rule)){
+                        long preBytes = flows_bytes.get(rule);
+                        long curBytes = ((FlowEntry) rule).bytes();
+                        double rate = (curBytes-preBytes)/5/1000;
+                        flows_rate.put((FlowEntry)rule,rate);
+                    }
+                    //log.info("====before instead:"+flows_bytes);
+                    flows_bytes.put((FlowEntry)rule,((FlowEntry)rule).bytes());
+                    //log.info("====after instead:"+flows_bytes);
+                }
+            }
+        }
+    }
+
+
+    //如果可以获得map,就可以在这里写一个getMap()，然后直接通过statisticService服务来获取流速
+    public Map<FlowId, Double> getFlowIdRateMap(ConnectPoint connectPoint)
+    {
+//        Set<FlowEntry> current;
+//        Set<FlowEntry> previous;
+//        synchronized (statisticStore) {
+//            current = getCurrentStatistic(connectPoint);
+//            previous = getPreviousStatistic(connectPoint);
+//        }
+//        Map<FlowId, Double> flowIdRateMap=new HashMap<>();
+//        if(connectPoint.toString().equals("of:0000000000100000/1") || connectPoint.toString().equals("of:0000000000100000/2"))
+//        {
+//            log.info("======connectPoint: " + connectPoint + "======current: "+current+" ======previous"+previous);
+//            for(FlowEntry flowEntry : current){
+//                if(previous.contains(flowEntry)){
+//                    long curBytes = flowEntry.bytes();
+//                    for(FlowEntry flowEntry1 : previous){   //还可以用端口来进行进一步的筛选
+//                        if(flowEntry1.id().toString().trim().equals(flowEntry.id().toString().trim())){
+//                            long preBytes = flowEntry1.bytes();
+//                            log.info("statistic ----------------------------------------");
+//                            log.info("flowId: " + flowEntry.id().toString().trim());
+//                            Double rate = (curBytes - preBytes)*1.0 / 5;
+//                            log.info("flowRate: " + rate);
+//                            flowIdRateMap.put(flowEntry.id(), rate);
+//                            writeFile("/root/onos/statsOfLinks.txt", connectPoint.toString(), flowEntry.id().toString(), rate);
+//                        }
+//                    }
+//                }
+//            }
+//        }
+
+        return flowIdRateMap;
     }
 
     /**
@@ -257,9 +491,8 @@ public class StatisticManager implements StatisticService {
             switch (event.type()) {
                 case RULE_ADDED:
                 case RULE_UPDATED:
-                    if (rule instanceof FlowEntry) {
-                        statisticStore.addOrUpdateStatistic((FlowEntry) rule);
-                    }
+                    caculateFLowRate(rule);
+                    statisticStore.addOrUpdateStatistic((FlowEntry) rule);
                     break;
                 case RULE_ADD_REQUESTED:
                     statisticStore.prepareForStatistics(rule);

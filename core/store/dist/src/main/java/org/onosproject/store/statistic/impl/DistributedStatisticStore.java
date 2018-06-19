@@ -216,6 +216,7 @@ public class DistributedStatisticStore implements StatisticStore {
         InternalStatisticRepresentation rep = representations.get(cp);
         if (rep != null && rep.submit(rule)) {
             updatePublishedStats(cp, rep.get());
+
         }
     }
 

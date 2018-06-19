@@ -21,8 +21,11 @@ import org.onosproject.core.GroupId;
 import org.onosproject.net.ConnectPoint;
 import org.onosproject.net.Link;
 import org.onosproject.net.Path;
+import org.onosproject.net.flow.FlowEntry;
+import org.onosproject.net.flow.FlowId;
 import org.onosproject.net.flow.FlowRule;
 
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -58,4 +61,15 @@ public class StatisticServiceAdapter implements StatisticService {
     public Load load(Link link, ApplicationId appId, Optional<GroupId> groupId) {
         return null;
     }
+
+    //zlzl========
+    @Override
+    public Map<FlowId, Double> getFlowIdRateMap(ConnectPoint connectPoint) {return null;};
+
+    @Override
+    public Link max(Path path, String string){ return null;}
+
+    @Override
+    public Map<FlowId, Double> getFLowRate(ConnectPoint cp){return null;}
+
 }
